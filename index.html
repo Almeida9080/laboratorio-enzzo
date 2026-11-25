@@ -1,39 +1,327 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <title>Meu primeiro site</title>
-    <style>
-    body {
-        background-color: #121212;
-        color: white;
-        font-family: Arial, sans-serif;
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c0a1a">
+  <title>Caça às Estrelas</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, sans-serif;
+      color: #f9f6ff;
+      background: #0c0a1a;
+      --purple: #c2a9ff;
+      --yellow: #ffdb79;
     }
 
-    h1 {
-        color: purple;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(ellipse at top, #271842 0%, #0c0a1a 68%);
     }
+
+    main { width: min(100% - 2rem, 760px); margin: auto; padding: 2rem 0; }
+    h1 { margin: 0; font-size: clamp(2.2rem, 8vw, 4rem); line-height: 1; letter-spacing: -.055em; }
+    .instructions { color: #d4c9e7; margin: .75rem 0 1.4rem; }
+
+    .hud {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      font-size: .9rem;
+      font-weight: 700;
+      margin-bottom: .65rem;
+    }
+
+    .hud output { color: var(--yellow); font-variant-numeric: tabular-nums; margin-left: .25rem; }
+    #time.urgent { color: #ff9fbd; }
+
+    .arena {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #624788;
+      border-radius: 1rem;
+      box-shadow: 0 1rem 3rem #06031175;
+    }
+
+    canvas { display: block; width: 100%; height: auto; }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: .65rem;
+      padding: .75rem;
+      text-align: center;
+      background: #100a20df;
+    }
+    .overlay[hidden] { display: none; }
+    .overlay h2 { margin: 0; font-size: clamp(1.35rem, 4vw, 2.3rem); }
+    .overlay p { margin: 0; color: #e2d5f4; }
+
     button {
-        background-color: purple;
-        color: white;
-        font-size: 18px;
-        padding: 12px 20px;
-        border: none;
-        border-radius: 8px;
-        cursor: pointer;
+      font: inherit;
+      font-weight: 750;
+      cursor: pointer;
+      color: #190e2d;
+      background: var(--purple);
+      border: 0;
+      border-radius: .65rem;
     }
-</style>
+    button:focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
+    #start { padding: .7rem 1.25rem; min-height: 44px; }
+    .help { margin: .85rem 0 0; color: #d4c9e7; text-align: center; font-size: .9rem; }
+
+    .controls {
+      display: none;
+      grid-template-columns: repeat(3, 3.2rem);
+      grid-template-rows: repeat(2, 3rem);
+      justify-content: center;
+      gap: .45rem;
+      margin-top: 1rem;
+      touch-action: none;
+    }
+    .controls button { font-size: 1.4rem; touch-action: none; user-select: none; }
+    .controls button:active { background: var(--yellow); }
+    .controls [data-key="ArrowUp"] { grid-column: 2; }
+    .controls [data-key="ArrowLeft"] { grid-column: 1; grid-row: 2; }
+    .controls [data-key="ArrowDown"] { grid-column: 2; grid-row: 2; }
+    .controls [data-key="ArrowRight"] { grid-column: 3; grid-row: 2; }
+    @media (any-pointer: coarse), (max-width: 640px) { .controls { display: grid; } }
+  </style>
 </head>
 <body>
-<h1>Meu primeiro site</h1>
-<p>Usando HTML, CSS e JavaScript</p>
-<button onclick="mudarMensagem()">Clique aqui</button>
-<p id="mensagem"></p>
+  <main>
+    <h1>Caça às Estrelas</h1>
+    <p class="instructions">Pilote a nave e colete 10 estrelas em 30 segundos.</p>
 
-<script>
-    function mudarMensagem() {
-        document.getElementById("mensagem").textContent = "Você clicou no botão!";
+    <div class="hud">
+      <span>Estrelas <output id="score" aria-live="off">0 / 10</output></span>
+      <span>Tempo <output id="time" aria-live="off">30 s</output></span>
+    </div>
+
+    <div class="arena">
+      <canvas id="game" width="640" height="400" aria-label="Área do jogo">
+        Seu navegador precisa oferecer suporte a Canvas para jogar.
+      </canvas>
+      <div class="overlay" id="overlay">
+        <h2 id="message" role="status">Tudo pronto?</h2>
+        <p id="details">A contagem começa quando você apertar Jogar.</p>
+        <button id="start" type="button">Jogar</button>
+      </div>
+    </div>
+
+    <p class="help">Use as setas ou WASD no teclado. No celular, use os botões abaixo.</p>
+
+    <div class="controls" role="group" aria-label="Controles de movimento">
+      <button type="button" data-key="ArrowUp" aria-label="Mover para cima">↑</button>
+      <button type="button" data-key="ArrowLeft" aria-label="Mover para a esquerda">←</button>
+      <button type="button" data-key="ArrowDown" aria-label="Mover para baixo">↓</button>
+      <button type="button" data-key="ArrowRight" aria-label="Mover para a direita">→</button>
+    </div>
+  </main>
+
+  <script>
+    const canvas = document.querySelector("#game");
+    const ctx = canvas.getContext("2d");
+    const scoreLabel = document.querySelector("#score");
+    const timeLabel = document.querySelector("#time");
+    const overlay = document.querySelector("#overlay");
+    const message = document.querySelector("#message");
+    const details = document.querySelector("#details");
+    const start = document.querySelector("#start");
+
+    const width = canvas.width;
+    const height = canvas.height;
+    const target = 10;
+    const duration = 30_000;
+    const speed = 285;
+    const radius = 16;
+    const keys = new Set();
+    const touches = new Map();
+    const player = { x: width / 2, y: height / 2 };
+    const star = { x: width * .76, y: height * .27 };
+    const backgroundStars = Array.from({ length: 80 }, () => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      size: Math.random() * 2 + .5
+    }));
+
+    let score = 0;
+    let deadline = 0;
+    let previousFrame = 0;
+    let playing = false;
+
+    function draw() {
+      ctx.fillStyle = "#110d24";
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.fillStyle = "#78699e";
+      for (const dot of backgroundStars) {
+        ctx.fillRect(dot.x, dot.y, dot.size, dot.size);
+      }
+
+      // A estrela tem dez vértices, alternando entre a ponta e o centro.
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const angle = i * Math.PI / 5 - Math.PI / 2;
+        const size = i % 2 === 0 ? 16 : 7;
+        const x = star.x + Math.cos(angle) * size;
+        const y = star.y + Math.sin(angle) * size;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "#ffdb79";
+      ctx.fill();
+
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.beginPath();
+      ctx.moveTo(0, -16);
+      ctx.lineTo(14, 13);
+      ctx.lineTo(0, 8);
+      ctx.lineTo(-14, 13);
+      ctx.closePath();
+      ctx.fillStyle = "#c2a9ff";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -2, 4, 0, Math.PI * 2);
+      ctx.fillStyle = "#362569";
+      ctx.fill();
+      ctx.restore();
     }
-</script>
+
+    function moveStar() {
+      const margin = 24;
+      // A próxima estrela fica longe o bastante para exigir movimento.
+      do {
+        star.x = margin + Math.random() * (width - 2 * margin);
+        star.y = margin + Math.random() * (height - 2 * margin);
+      } while (Math.hypot(star.x - player.x, star.y - player.y) < 90);
+    }
+
+    function updateScore() {
+      scoreLabel.textContent = score + " / " + target;
+    }
+
+    function updateTime(milliseconds) {
+      const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
+      const label = seconds + " s";
+      if (timeLabel.textContent !== label) timeLabel.textContent = label;
+      timeLabel.classList.toggle("urgent", seconds <= 5);
+    }
+
+    function finish(won) {
+      playing = false;
+      keys.clear();
+      touches.clear();
+      message.textContent = won ? "Você venceu!" : "Tempo esgotado!";
+      details.textContent = "Estrelas coletadas: " + score + " de " + target + ".";
+      start.textContent = "Jogar de novo";
+      overlay.hidden = false;
+      start.focus();
+    }
+
+    function pressed(arrow, letter) {
+      return keys.has(arrow) || keys.has(letter) || touches.has(arrow);
+    }
+
+    // A cada quadro: ler os controles, mover a nave e verificar a colisão.
+    function frame(now) {
+      if (!playing) return;
+
+      const remaining = deadline - now;
+      updateTime(remaining);
+      if (remaining <= 0) {
+        finish(false);
+        return;
+      }
+
+      const elapsed = Math.min((now - previousFrame) / 1000, .05);
+      previousFrame = now;
+      let dx = Number(pressed("ArrowRight", "d")) - Number(pressed("ArrowLeft", "a"));
+      let dy = Number(pressed("ArrowDown", "s")) - Number(pressed("ArrowUp", "w"));
+      const length = Math.hypot(dx, dy);
+
+      // Normalizar a direção mantém a mesma velocidade na diagonal.
+      if (length > 0) {
+        dx = dx / length * speed * elapsed;
+        dy = dy / length * speed * elapsed;
+        player.x = Math.max(radius, Math.min(width - radius, player.x + dx));
+        player.y = Math.max(radius, Math.min(height - radius, player.y + dy));
+      }
+
+      if (Math.hypot(star.x - player.x, star.y - player.y) < 25) {
+        score++;
+        updateScore();
+        if (score === target) {
+          draw();
+          finish(true);
+          return;
+        }
+        moveStar();
+      }
+
+      draw();
+      requestAnimationFrame(frame);
+    }
+
+    function startGame() {
+      if (playing) return;
+      score = 0;
+      player.x = width / 2;
+      player.y = height / 2;
+      keys.clear();
+      touches.clear();
+      moveStar();
+      updateScore();
+      updateTime(duration);
+      overlay.hidden = true;
+      playing = true;
+      previousFrame = performance.now();
+      deadline = previousFrame + duration;
+      draw();
+      requestAnimationFrame(frame);
+    }
+
+    const movementKeys = new Set(["ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight", "w", "a", "s", "d"]);
+    function movementKey(event) {
+      return event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    }
+
+    window.addEventListener("keydown", event => {
+      const key = movementKey(event);
+      if (!playing || event.altKey || event.ctrlKey || event.metaKey || !movementKeys.has(key)) return;
+      event.preventDefault();
+      keys.add(key);
+    });
+    window.addEventListener("keyup", event => keys.delete(movementKey(event)));
+    window.addEventListener("blur", () => {
+      keys.clear();
+      touches.clear();
+    });
+
+    for (const button of document.querySelectorAll("[data-key]")) {
+      const key = button.dataset.key;
+      button.addEventListener("pointerdown", event => {
+        if (!playing || event.button !== 0) return;
+        button.setPointerCapture(event.pointerId);
+        touches.set(key, event.pointerId);
+      });
+      function release(event) {
+        if (touches.get(key) === event.pointerId) touches.delete(key);
+      }
+      button.addEventListener("pointerup", release);
+      button.addEventListener("pointercancel", release);
+      button.addEventListener("lostpointercapture", release);
+    }
+
+    start.addEventListener("click", startGame);
+    draw();
+  </script>
 </body>
 </html>
